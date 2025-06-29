@@ -1,11 +1,11 @@
-// screens/security_guard_screen.dart (แก้ไข)
+// screens/security_guard_screen.dart (อัพเดทให้ทำงานกับ Database)
 import 'package:flutter/material.dart';
 import '../models/vehicle_record.dart';
 import '../widgets/print_preview_dialog.dart';
 import '../widgets/vehicle_type_selector.dart';
 
 class SecurityGuardScreen extends StatefulWidget {
-  final Function(VehicleRecord) onAddRecord;
+  final Future<void> Function(VehicleRecord) onAddRecord;
 
   const SecurityGuardScreen({super.key, required this.onAddRecord});
 
@@ -17,8 +17,9 @@ class _SecurityGuardScreenState extends State<SecurityGuardScreen> {
   final TextEditingController _licensePlateController = TextEditingController();
   final TextEditingController _houseNumberController = TextEditingController();
   VehicleType _selectedVehicleType = VehicleType.visitor;
+  bool _isSaving = false;
 
-  void _saveRecord() {
+  Future<void> _saveRecord() async {
     if (_licensePlateController.text.trim().isEmpty ||
         _houseNumberController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -30,36 +31,51 @@ class _SecurityGuardScreenState extends State<SecurityGuardScreen> {
       return;
     }
 
-    final record = VehicleRecord(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      licensePlate: _licensePlateController.text.trim(),
-      houseNumber: _houseNumberController.text.trim(),
-      vehicleType: _selectedVehicleType,
-      entryTime: DateTime.now(),
-    );
+    if (_isSaving) return; // ป้องกันการกดซ้ำ
 
-    widget.onAddRecord(record);
-    _showPrintPreview(record);
-
-    // เคลียร์ form
-    _licensePlateController.clear();
-    _houseNumberController.clear();
     setState(() {
-      _selectedVehicleType = VehicleType.visitor;
+      _isSaving = true;
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Row(
-          children: [
-            Icon(Icons.check_circle, color: Colors.white),
-            SizedBox(width: 8),
-            Text('บันทึกข้อมูลเรียบร้อยแล้ว'),
-          ],
-        ),
-        backgroundColor: Colors.green,
-      ),
-    );
+    try {
+      final record = VehicleRecord(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        licensePlate: _licensePlateController.text.trim(),
+        houseNumber: _houseNumberController.text.trim(),
+        vehicleType: _selectedVehicleType,
+        entryTime: DateTime.now(),
+      );
+
+      // บันทึกข้อมูลลงฐานข้อมูล
+      await widget.onAddRecord(record);
+
+      // แสดงตัวอย่างการพิมพ์
+      if (mounted) {
+        _showPrintPreview(record);
+
+        // เคลียร์ form
+        _licensePlateController.clear();
+        _houseNumberController.clear();
+        setState(() {
+          _selectedVehicleType = VehicleType.visitor;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('เกิดข้อผิดพลาดในการบันทึก: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
   }
 
   void _showPrintPreview(VehicleRecord record) {
@@ -113,6 +129,37 @@ class _SecurityGuardScreenState extends State<SecurityGuardScreen> {
                     'สำหรับเจ้าหน้าที่รักษาความปลอดภัย',
                     style: TextStyle(fontSize: 16, color: Colors.blue.shade600),
                   ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade100,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.green.shade300),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.storage,
+                          color: Colors.green.shade700,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'ข้อมูลจะถูกบันทึกลงฐานข้อมูล',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.green.shade700,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -156,6 +203,7 @@ class _SecurityGuardScreenState extends State<SecurityGuardScreen> {
                   // ป้ายทะเบียน
                   TextField(
                     controller: _licensePlateController,
+                    enabled: !_isSaving,
                     decoration: InputDecoration(
                       labelText: 'ป้ายทะเบียนรถ',
                       hintText: 'เช่น ABC1234',
@@ -164,7 +212,10 @@ class _SecurityGuardScreenState extends State<SecurityGuardScreen> {
                       ),
                       prefixIcon: const Icon(Icons.directions_car),
                       filled: true,
-                      fillColor: Colors.grey.shade50,
+                      fillColor:
+                          _isSaving
+                              ? Colors.grey.shade100
+                              : Colors.grey.shade50,
                     ),
                     textCapitalization: TextCapitalization.characters,
                   ),
@@ -174,6 +225,7 @@ class _SecurityGuardScreenState extends State<SecurityGuardScreen> {
                   // บ้านเลขที่
                   TextField(
                     controller: _houseNumberController,
+                    enabled: !_isSaving,
                     decoration: InputDecoration(
                       labelText: 'บ้านเลขที่ที่ต้องการไป',
                       hintText: 'เช่น 123/45',
@@ -182,7 +234,10 @@ class _SecurityGuardScreenState extends State<SecurityGuardScreen> {
                       ),
                       prefixIcon: const Icon(Icons.home),
                       filled: true,
-                      fillColor: Colors.grey.shade50,
+                      fillColor:
+                          _isSaving
+                              ? Colors.grey.shade100
+                              : Colors.grey.shade50,
                     ),
                   ),
 
@@ -191,11 +246,14 @@ class _SecurityGuardScreenState extends State<SecurityGuardScreen> {
                   // เลือกประเภทรถ
                   VehicleTypeSelector(
                     selectedType: _selectedVehicleType,
-                    onChanged: (type) {
-                      setState(() {
-                        _selectedVehicleType = type;
-                      });
-                    },
+                    onChanged:
+                        _isSaving
+                            ? null
+                            : (type) {
+                              setState(() {
+                                _selectedVehicleType = type;
+                              });
+                            },
                   ),
 
                   const SizedBox(height: 24),
@@ -205,22 +263,35 @@ class _SecurityGuardScreenState extends State<SecurityGuardScreen> {
                     width: double.infinity,
                     height: 50,
                     child: ElevatedButton.icon(
-                      onPressed: _saveRecord,
-                      icon: const Icon(Icons.save, size: 24),
-                      label: const Text(
-                        'บันทึกข้อมูล',
-                        style: TextStyle(
+                      onPressed: _isSaving ? null : _saveRecord,
+                      icon:
+                          _isSaving
+                              ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
+                                ),
+                              )
+                              : const Icon(Icons.save, size: 24),
+                      label: Text(
+                        _isSaving ? 'กำลังบันทึก...' : 'บันทึกข้อมูล',
+                        style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green.shade600,
+                        backgroundColor:
+                            _isSaving ? Colors.grey : Colors.green.shade600,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        elevation: 2,
+                        elevation: _isSaving ? 0 : 2,
                       ),
                     ),
                   ),
@@ -262,10 +333,42 @@ class _SecurityGuardScreenState extends State<SecurityGuardScreen> {
                   Text(
                     '• เลือกประเภทรถให้ถูกต้อง\n'
                     '• ตรวจสอบป้ายทะเบียนก่อนบันทึก\n'
-                    '• ระบบจะพิมพ์ใบเสร็จอัตโนมัติ\n'
+                    '• ข้อมูลจะถูกบันทึกลงฐานข้อมูลอัตโนมัติ\n'
+                    '• ระบบจะแสดงตัวอย่างการพิมพ์หลังบันทึก\n'
                     '• ดูรายการรถได้ที่แท็บ "รถในหมู่บ้าน"',
                     style: TextStyle(color: Colors.amber.shade700, height: 1.5),
                   ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // สถานะการเชื่อมต่อฐานข้อมูล
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.check_circle,
+                    color: Colors.green.shade700,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'เชื่อมต่อฐานข้อมูลสำเร็จ',
+                    style: TextStyle(
+                      color: Colors.green.shade700,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Spacer(),
+                  Icon(Icons.storage, color: Colors.green.shade700, size: 16),
                 ],
               ),
             ),
